@@ -11,23 +11,22 @@ class MetasploitModule < Msf::Auxiliary
   include Msf::Exploit::Remote::DCERPC
 
   include Msf::Auxiliary::Report
-
-  # Scanner mixin should be near last
   include Msf::Auxiliary::Scanner
 
   def initialize
     super(
-      'Name'        => 'Badlock',
+      'Name'        => 'MS16-047 Badlock Detection',
       'Description' => %q{
-        This module can be used to obtain information from the Remote
-        Management Interface DCERPC service.
+        This module can be used to detect if a machine is missing the patch that
+        fixes the Badlock vulnerability.
       },
       'Author'      => 'Sean Dillon <sean.dillon@risksense.com>',
-      'References' =>
+      'References'  =>
         [
-          [ 'CVE', '2016-0128'],
-          [ 'MSB', 'MS16-047'],
-          [ 'URL', 'https://technet.microsoft.com/en-us/library/security/ms16-047.aspx']
+          [ 'CVE', '2016-0128' ],
+          [ 'MSB', 'MS16-047' ],
+          [ 'URL', 'https://technet.microsoft.com/en-us/library/security/ms16-047.aspx' ],
+          [ 'URL', 'http://badlock.org' ]
         ],
       'License'     => MSF_LICENSE
     )
@@ -40,14 +39,13 @@ class MetasploitModule < Msf::Auxiliary
       ], self.class)
   end
 
-  # Obtain information about a single host
-  def run_host(ip)
+  def detect_badlock()
     begin
-
       op_sam2 = 0x39;
       sam_uuid = '12345778-1234-abcd-ef00-0123456789ac'
 
       connect
+
       handle = dcerpc_handle(sam_uuid, '1.0', 'ncacn_np', [datastore['RPORT']])
       dcerpc_bind(handle)
 
@@ -63,20 +61,30 @@ class MetasploitModule < Msf::Auxiliary
       data << "\x30"              # access mask
 
       pkt = dcerpc.call(op_sam2, data)
+      print(pkt)
       status = ""
 
-      if status == "STATUS_SUCCESS" or status == "STATUS_ACCESS_DENIED":
+      if status == "STATUS_SUCCESS" or status == "STATUS_ACCESS_DENIED"
         print_warning("Host appears to be VULNERABLE to MS16-047 (Badlock)!")
       else
         print_status("Unable to determine if vulnerable, unexpected #{status}")
       end
 
-    rescue ::Interrupt
-      raise $!
     rescue ::Rex::Proto::SMB::Exceptions::LoginError
       print_status("Host is NOT vulnerable (or anonymous login failed)")
     rescue ::Rex::Proto::SMB::Exceptions::NoReply, Rex::Proto::DCERPC::Exceptions::NoResponse
       print_status("The DCERPC service did not reply to our request")
+    ensure
+      disconnect
+    end
+  end
+
+  # Obtain information about a single host
+  def run_host(ip)
+    begin
+      detect_badlock
+    rescue ::Interrupt
+      raise $!
     rescue ::Exception => e
       print_error("#{e.class}: #{e.message}")
     end
